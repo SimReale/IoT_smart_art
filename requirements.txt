@@ -1,0 +1,4 @@
+aiohttp
+aiocoap
+paho-mqtt
+influxdb-client
