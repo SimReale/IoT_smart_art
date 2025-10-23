@@ -13,8 +13,6 @@
 #define LIGHTPIN 34
 
 // WiFi parameters
-// #define WIFI_SSID "Ospiti-TIM-86345865"
-// #define WIFI_PASSWORD "guest4NAIS!"
 #define WIFI_SSID "Vodafone-C00630078"
 #define WIFI_PASSWORD "CT7r3HbmACF4McXz"
 

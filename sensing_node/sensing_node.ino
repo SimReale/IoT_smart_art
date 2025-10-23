@@ -18,7 +18,7 @@ TaskHandle_t TaskMotionDetection;
 // Config Variables
 String protocol = "coap";
 int sampling_rate = 300;
-int motion_alert = 10;
+int motion_alert = 15;
 
 
 
@@ -54,38 +54,9 @@ void loop() {
   }
   client.loop();
 
-  // // --- DHT22 ---
   // float h = dht.readHumidity();
   // float t = dht.readTemperature();
-
-  // if (isnan(h) || isnan(t)) {
-  //   Serial.println("Errore nella lettura del DHT22!");
-  // } else {
-  //   Serial.print("Temperatura: ");
-  //   Serial.print(t);
-  //   Serial.print(" °C  |  Umidità: ");
-  //   Serial.print(h);
-  //   Serial.println(" %");
-  // }
-
-  // // --- PIR ---
-  // int motion = digitalRead(PIRPIN);
-  // if (motion == HIGH) {
-  //   Serial.println("Movimento rilevato!");
-  //   digitalWrite(LEDPIN, HIGH);
-  // } else {
-  //   Serial.println("Nessun movimento.");
-  //   digitalWrite(LEDPIN, LOW);
-  // }
-
-  // --- Ambient Light ---
   // int lightValue = analogRead(LIGHTPIN);
-  // Serial.print("Luce: ");
-  // Serial.println(lightValue);
-
-  // Serial.println("-------------------------");
-
-  // delay(500);
 }
 
 
@@ -160,17 +131,24 @@ void SetupCallback(char* topic, byte* message, unsigned int length) {
 
 void motion_detection_task(void* parameters){
 
-  int lastState = LOW;
-
-  for(;;){    
-    // Communication
+  for (;;){
     int motion = digitalRead(PIRPIN);
-    if (motion != lastState) {
-      lastState = motion;
-      String msg = motion ? "1" : "0";
-      client.publish(TOPIC_MOTION, msg.c_str());
+    int count = 0;
+    if (DEBUG && motion == HIGH){
+      Serial.println("Motion detected!");
     }
-    vTaskDelay(pdMS_TO_TICKS(100));
+    while (motion == HIGH){
+      count++;
+      if (count/2 >= motion_alert){
+        client.publish(TOPIC_MOTION, "1");
+        if (DEBUG){
+          Serial.println("Motion published!");
+        }
+      }
+      motion = digitalRead(PIRPIN);
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
