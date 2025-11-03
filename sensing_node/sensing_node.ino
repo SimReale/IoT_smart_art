@@ -1,23 +1,28 @@
 #include "params.h"
+#include "wifi_config.h"
 #include "DHT.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <WiFiUdp.h>
 #include <coap-simple.h>
+#include <HTTPClient.h>
 
 
 
-// Inits
+// WiFi/Communication Inits
 DHT dht(DHTPIN, DHTTYPE);
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
-
+WiFiUDP udp;
+Coap coap(udp);
+HTTPClient http;
 
 // RTOS handles init
 TaskHandle_t TaskMotionDetection;
 
 // Config Variables
-String protocol = "coap";
-int sampling_rate = 300;
+String protocol = "coap";   // "coap" or "http"
+int sampling_rate = 3;
 int motion_alert = 15;
 
 
@@ -28,18 +33,17 @@ void setup() {
     Serial.begin(115200);
   }
   dht.begin();
-  pinMode(PIRPIN, INPUT);
   pinMode(LEDPIN, OUTPUT);
-  pinMode(LIGHTPIN, INPUT);
 
   digitalWrite(LEDPIN, HIGH);
   setupWiFi();
-  client.setServer(BROKER_ADDRESS, BROKER_PORT);
+  client.setServer(SERVER_ADDRESS, MQTT_PORT);
   client.setCallback(SetupCallback);
   connectMQTT();
+  coap.start();
   digitalWrite(LEDPIN, LOW);
 
-  xTaskCreatePinnedToCore(motion_detection_task, "Motion_Detection", 2048, NULL, 1, &TaskMotionDetection, 1);
+  xTaskCreatePinnedToCore(motion_detection_task, "Motion_Detection", 1024, NULL, 2, &TaskMotionDetection, 1);
 }
 
 
@@ -54,9 +58,90 @@ void loop() {
   }
   client.loop();
 
-  // float h = dht.readHumidity();
-  // float t = dht.readTemperature();
-  // int lightValue = analogRead(LIGHTPIN);
+  // Sensors reading
+  float hum = dht.readHumidity();
+  float temp = dht.readTemperature();
+  int light = analogRead(LIGHTPIN);
+
+  char payload[100];
+  sprintf(payload, "{\"temperatura\":%.2f,\"umidita\":%.2f,\"luce\":%d}", temp, hum, light);
+  if (DEBUG){
+    Serial.println(payload);
+  }
+  if (protocol == "coap"){
+    CoAPSend(payload);
+  } else if (protocol == "http"){
+    HTTPSend(payload);
+  }
+  vTaskDelay(pdMS_TO_TICKS(sampling_rate * 1000));
+}
+
+
+
+void motion_detection_task(void* parameters){
+
+  for (;;){
+    int motion = digitalRead(PIRPIN);
+    int count = 0;
+    if (DEBUG && motion == HIGH){
+      Serial.println("Motion detected!");
+    }
+    while (motion == HIGH){
+      count++;
+      if (count/2 >= motion_alert){
+        client.publish(TOPIC_MOTION, "1");
+        if (DEBUG){
+          Serial.println("Motion published!");
+        }
+      }
+      motion = digitalRead(PIRPIN);
+      vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
+  }
+}
+
+
+
+void CoAPSend(const char* payload){
+
+  IPAddress server_IP;
+  server_IP.fromString(SERVER_ADDRESS);
+
+  int msg_id = coap.put(server_IP, COAP_PORT, DATA_PATH, payload);
+  if (DEBUG){
+    if (msg_id){
+      Serial.println("CoAP message sent:");
+      Serial.print("- ID: ");
+      Serial.println(msg_id);
+    } else {
+      Serial.println("CoAP communication error.");
+    }
+  }
+}
+
+
+
+void HTTPSend(const char* payload){
+
+  String server_URL = "http://" + String(SERVER_ADDRESS) + ":" + String(HTTP_PORT) + "/" + String(DATA_PATH);
+  http.begin(server_URL);
+  http.addHeader("Content-Type", "application/json");
+  
+  int http_code = http.POST(payload);
+  if (DEBUG){
+    if (http_code > 0) {
+      Serial.println("HTTP message sent:");
+      Serial.print("- Code: ");
+      Serial.println(http_code);
+      Serial.print("- Message: ");
+      Serial.println(http.getString().c_str());
+    } else {
+      Serial.print("HTTP request error: ");
+      Serial.println(http.errorToString(http_code).c_str());
+    }
+  }
+  http.end();
 }
 
 
@@ -129,35 +214,10 @@ void SetupCallback(char* topic, byte* message, unsigned int length) {
 
 
 
-void motion_detection_task(void* parameters){
-
-  for (;;){
-    int motion = digitalRead(PIRPIN);
-    int count = 0;
-    if (DEBUG && motion == HIGH){
-      Serial.println("Motion detected!");
-    }
-    while (motion == HIGH){
-      count++;
-      if (count/2 >= motion_alert){
-        client.publish(TOPIC_MOTION, "1");
-        if (DEBUG){
-          Serial.println("Motion published!");
-        }
-      }
-      motion = digitalRead(PIRPIN);
-      vTaskDelay(pdMS_TO_TICKS(500));
-    }
-    vTaskDelay(pdMS_TO_TICKS(500));
-  }
-}
-
-
-
 void setupWiFi(){
 
   WiFi.mode(WIFI_STA);          // Station mode (client)
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(MY_SSID, MY_PASSWORD);
 
   int count = 0;
   while (WiFi.status() != WL_CONNECTED) {

@@ -12,14 +12,13 @@
 #define LEDPIN 2
 #define LIGHTPIN 34
 
-// WiFi parameters
-#define WIFI_SSID "Vodafone-C00630078"
-#define WIFI_PASSWORD "CT7r3HbmACF4McXz"
-
 // MQTT parameters
-#define BROKER_ADDRESS "192.168.1.7"     //CAMBIAAA
-#define BROKER_PORT 1883                 //CAMBIAAA
-#define MQTT_SUBSCRIBE_QOS 1
+#define SERVER_ADDRESS "192.168.1.7"
+#define MQTT_PORT 1883
+#define COAP_PORT 5683
+#define HTTP_PORT 80
+#define DATA_PATH "sensors"
+#define MQTT_SUBSCRIBE_QOS 0
 #define TOPIC_MOTION "sensors/motion"
 #define TOPIC_PROTOCOL "config/protocol"
 #define TOPIC_SAMPLING_RATE "config/sampling_rate"
