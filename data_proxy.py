@@ -1,160 +1,119 @@
 import asyncio
-import json
-import threading
-import time
-from influxdb import InfluxDBClient
+import argparse
 import paho.mqtt.client as mqtt
+from influxdb_client_3 import InfluxDBClient3, Point
+from time import time
+from datetime import datetime
 
-# -----------------------------
-# INITIAL CONFIGURATION
-# -----------------------------
-config = {
-    "protocol": "http",   # or "coap"
-    "sampling_rate": 5,   # seconds between samples
-    "motion_alert": 10    # seconds for motion trigger threshold
-}
 
-INFLUX_CONFIG = {
-    "host": "localhost",
-    "port": 8086,
-    "username": "admin",
-    "password": "password",
-    "database": "iot_data"
-}
+IDB_TOKEN = "kIUU3igGDo1Ih8k5K3rV2WkJG97r1VmezMDF0yseNIpfzGcDL0iuoP2PorOx9KKzRLRaBVixrgK1OXqX_MbmPw=="
+IDB_ORG = "UniBo"
+IDB_HOST = "https://eu-central-1-1.aws.cloud2.influxdata.com"
+IDB_BUCKET = "prova"
 
-# -----------------------------
-# INFLUXDB CONNECTION
-# -----------------------------
-influx_client = InfluxDBClient(
-    host=INFLUX_CONFIG["host"],
-    port=INFLUX_CONFIG["port"],
-    username=INFLUX_CONFIG["username"],
-    password=INFLUX_CONFIG["password"],
-    database=INFLUX_CONFIG["database"]
-)
+TOPIC_CONFIG = "config/"
+MQTT_BROKER = "localhost"
+MQTT_PORT = 1883
+COAP_PORT = 5683
+HTTP_PORT = 8080 
+DATA_PATH = "sensors"
 
-# -----------------------------
-# DATA HANDLING FUNCTIONS
-# -----------------------------
 
-def send_to_influx(data):
-    """Send a measurement to InfluxDB."""
-    json_body = [
-        {
-            "measurement": "environment",
-            "fields": {
-                "temperature": float(data.get("temperature", 0.0)),
-                "humidity": float(data.get("humidity", 0.0)),
-                "light": float(data.get("light", 0.0))
-            }
-        }
-    ]
-    influx_client.write_points(json_body)
-    print(f"[INFLUX] Data sent: {json_body}")
+def on_connect(client, userdata, flags, reason_code, properties):
+  
+  if reason_code == 0:
+    print(f"[{datetime.fromtimestamp(time())}] MQTT Connection established.")
+    for topic in userdata.keys():
+      client.publish(TOPIC_CONFIG + topic, userdata[topic], retain=True)
+    print("Config:") 
+    print(f" - protocol: {userdata['protocol']}")
+    print(f" - sampling_rate: {userdata['sampling_rate']}")
+    print(f" - motion_alert: {userdata['motion_alert']}")
 
-async def coap_listener():
-    """CoAP server listening for sensor data."""
-    from aiocoap import Context, Message, resource
 
-    class SensorDataResource(resource.Resource):
-        async def render_post(self, request):
-            try:
-                payload = json.loads(request.payload.decode())
-                send_to_influx(payload)
-                return Message(code=2.04, payload=b"OK")
-            except Exception as e:
-                print(f"[COAP] Error: {e}")
-                return Message(code=5.00, payload=str(e).encode())
+def save_to_influx(client, payload_dict):
 
-    root = resource.Site()
-    root.add_resource(["data"], SensorDataResource())
+  try:
+    temp, hum, light = payload_dict["temperature"], payload_dict["humidity"], payload_dict["light"]
+    point = Point("sensors") \
+      .tag("node_id", "main_hall") \
+      .field("temperature", temp) \
+      .field("humidity", hum) \
+      .field("light", light)
+    client.write(point)
 
-    context = await Context.create_server_context(root)
-    print("[COAP] Listening on port 5683 for POST /data")
-    await asyncio.get_running_loop().create_future()  # Keeps server running
+  except Exception as e:
+    print(f"InfluxDB saving error: {e}")
 
-def http_listener():
-    """HTTP server listening for sensor data."""
-    from flask import Flask, request
-    app = Flask(__name__)
 
-    @app.route("/data", methods=["POST"])
-    def receive_data():
-        try:
-            payload = request.json
-            send_to_influx(payload)
-            return "OK", 200
-        except Exception as e:
-            print(f"[HTTP] Error: {e}")
-            return str(e), 400
+async def main(config):
 
-    print("[HTTP] Listening on port 8080 for POST /data")
-    app.run(host="0.0.0.0", port=8080)
+  protocol, sampling_rate, motion_alert = config['protocol'], config['sampling_rate'], config['motion_alert']
+  
+  # Client MQTT
+  mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, userdata=config)
+  mqtt_client.on_connect = on_connect
+  mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)   # 60 is the keepalive seconds parameter (for system resilience)
+  mqtt_client.loop_start()
 
-# -----------------------------
-# MQTT CALLBACKS
-# -----------------------------
+  # Influx client
+  influx_client = InfluxDBClient3(
+    host=IDB_HOST, 
+    token=IDB_TOKEN, 
+    org=IDB_ORG,
+    database=IDB_BUCKET
+    )
 
-def on_connect(client, userdata, flags, rc):
-    print("[MQTT] Connected with result code:", rc)
-    client.subscribe("config/#")
+  # CoAP/HTTP handler
+  if protocol == 'coap':
+    pass
+  elif protocol == 'http':
+    pass
 
-def on_message(client, userdata, msg):
-    topic = msg.topic
-    payload = msg.payload.decode().strip()
-    print(f"[MQTT] Message on {topic}: {payload}")
+  # Stopping
+  try:
+    await asyncio.get_running_loop().create_future()
+  except KeyboardInterrupt:
+    print("Spegnimento...")
+    mqtt_client.loop_stop()
 
-    if topic == "config/protocol" and payload in ["coap", "http"]:
-        config["protocol"] = payload
-        print(f"[CONFIG] Protocol set to: {payload}")
-
-    elif topic == "config/sampling_rate":
-        try:
-            config["sampling_rate"] = int(payload)
-            print(f"[CONFIG] Sampling rate set to: {config['sampling_rate']} seconds")
-        except ValueError:
-            print("[ERROR] Invalid sampling rate value")
-
-    elif topic == "config/motion_alert":
-        try:
-            config["motion_alert"] = int(payload)
-            print(f"[CONFIG] Motion alert set to: {config['motion_alert']} seconds")
-        except ValueError:
-            print("[ERROR] Invalid motion alert value")
-
-# -----------------------------
-# MQTT CLIENT SETUP
-# -----------------------------
-
-def start_mqtt():
-    """Start MQTT client in background."""
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
-
-    client.connect("localhost", 1883, 60)
-    client.loop_forever()
-
-# -----------------------------
-# SERVER STARTUP
-# -----------------------------
-
-def start_server():
-    """Start the selected communication protocol server."""
-    if config["protocol"] == "http":
-        http_listener()
-    elif config["protocol"] == "coap":
-        asyncio.run(coap_listener())
-
-# -----------------------------
-# MAIN ENTRY POINT
-# -----------------------------
 
 if __name__ == "__main__":
-    mqtt_thread = threading.Thread(target=start_mqtt, daemon=True)
-    mqtt_thread.start()
+  parser = argparse.ArgumentParser(
+    description="Node that acts as a proxy for data and enables configuration parameters."
+  )
+  parser.add_argument(
+    "--protocol",
+    default='coap',
+    choices=['coap', 'http'],
+    help="Protocol to use for data communication from sensors."
+  )
+  parser.add_argument(
+    "--sampling_rate",
+    type=int,
+    default=60,
+    help="Sampling rate in seconds for data acquisition from sensors."
+  )
+  parser.add_argument(
+    "--motion_alert",
+    type=int,
+    default=15,
+    help="Number of seconds to trigger a motion alert for visualisation purposes (> 10s)."
+  )
+  args = parser.parse_args()
 
-    print("[MAIN] Waiting for MQTT configuration...")
-    time.sleep(2)
-
-    start_server()
+  if args.motion_alert <= 10:
+    config_data = {
+      "protocol": args.protocol,
+      "sampling_rate": args.sampling_rate,
+      "motion_alert": 15
+    }
+    print("Error: motion_alert must be greater than 10 seconds. Set to default value of 15 seconds.")
+  else:
+    config_data = {
+      "protocol": args.protocol,
+      "sampling_rate": args.sampling_rate,
+      "motion_alert": args.motion_alert
+    }
+  
+  asyncio.run(main(config_data))

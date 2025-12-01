@@ -16,9 +16,9 @@
 #define SERVER_ADDRESS "192.168.1.7"
 #define MQTT_PORT 1883
 #define COAP_PORT 5683
-#define HTTP_PORT 80
+#define HTTP_PORT 8080
 #define DATA_PATH "sensors"
-#define MQTT_SUBSCRIBE_QOS 0
+#define MQTT_SUBSCRIBE_QOS 1
 #define TOPIC_MOTION "sensors/motion"
 #define TOPIC_PROTOCOL "config/protocol"
 #define TOPIC_SAMPLING_RATE "config/sampling_rate"

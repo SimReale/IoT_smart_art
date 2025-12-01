@@ -22,7 +22,7 @@ TaskHandle_t TaskMotionDetection;
 
 // Config Variables
 String protocol = "coap";   // "coap" or "http"
-int sampling_rate = 3;
+int sampling_rate = 60;
 int motion_alert = 15;
 
 
@@ -64,7 +64,7 @@ void loop() {
   int light = analogRead(LIGHTPIN);
 
   char payload[100];
-  sprintf(payload, "{\"temperatura\":%.2f,\"umidita\":%.2f,\"luce\":%d}", temp, hum, light);
+  sprintf(payload, "{\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, light);
   if (DEBUG){
     Serial.println(payload);
   }
