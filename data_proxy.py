@@ -1,22 +1,35 @@
 import asyncio
 import argparse
+import yaml
 import paho.mqtt.client as mqtt
 from influxdb_client_3 import InfluxDBClient3, Point
 from time import time
 from datetime import datetime
+from pathlib import Path
 
 
-IDB_TOKEN = "kIUU3igGDo1Ih8k5K3rV2WkJG97r1VmezMDF0yseNIpfzGcDL0iuoP2PorOx9KKzRLRaBVixrgK1OXqX_MbmPw=="
-IDB_ORG = "UniBo"
-IDB_HOST = "https://eu-central-1-1.aws.cloud2.influxdata.com"
-IDB_BUCKET = "prova"
+# Load InfluxDB config
+CONFIG_PATH = Path.cwd().joinpath("influx_config.yaml")
+INFLUX_CONFIG = {}
+try:
+  with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+    INFLUX_CONFIG = yaml.safe_load(_f) or {}
+except FileNotFoundError:
+  print(f"Config file not found: {CONFIG_PATH} — using defaults in-file.")
+except Exception as _e:
+  print(f"Error loading config file {CONFIG_PATH}: {_e}")
+
+IDB_TOKEN = INFLUX_CONFIG["IDB_TOKEN"]
+IDB_ORG = INFLUX_CONFIG["IDB_ORG"]
+IDB_HOST = INFLUX_CONFIG["IDB_HOST"]
+IDB_BUCKET = INFLUX_CONFIG["IDB_BUCKET"]
 
 TOPIC_CONFIG = "config/"
+DATA_PATH = "sensors"
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 COAP_PORT = 5683
 HTTP_PORT = 8080 
-DATA_PATH = "sensors"
 
 
 def on_connect(client, userdata, flags, reason_code, properties):

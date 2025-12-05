@@ -1,4 +1,6 @@
-aiohttp
 aiocoap
 paho-mqtt
-influxdb-client
+influxdb3-python
+pandas
+ipykernel
+PyYAML

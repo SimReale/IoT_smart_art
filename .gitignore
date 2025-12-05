@@ -1,2 +1,3 @@
 .venv/
 sensing_node/wifi_config.h
+influx_config.yaml
