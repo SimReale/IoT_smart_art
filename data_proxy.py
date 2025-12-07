@@ -1,67 +1,109 @@
+import sys
 import asyncio
 import argparse
 import yaml
+import json
 import paho.mqtt.client as mqtt
+import aiocoap.resource as resource
+import aiocoap
+from aiohttp import web
 from influxdb_client_3 import InfluxDBClient3, Point
 from time import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 # Load InfluxDB config
 CONFIG_PATH = Path.cwd().joinpath("influx_config.yaml")
-INFLUX_CONFIG = {}
-try:
-  with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
-    INFLUX_CONFIG = yaml.safe_load(_f) or {}
-except FileNotFoundError:
-  print(f"Config file not found: {CONFIG_PATH} — using defaults in-file.")
-except Exception as _e:
-  print(f"Error loading config file {CONFIG_PATH}: {_e}")
+with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
+  INFLUX_CONFIG = yaml.safe_load(_f) or {}
 
-IDB_TOKEN = INFLUX_CONFIG["IDB_TOKEN"]
-IDB_ORG = INFLUX_CONFIG["IDB_ORG"]
-IDB_HOST = INFLUX_CONFIG["IDB_HOST"]
-IDB_BUCKET = INFLUX_CONFIG["IDB_BUCKET"]
+try:
+  INFLUX_CLIENT = InfluxDBClient3(
+    host=INFLUX_CONFIG.get("IDB_HOST", ""), 
+    token=INFLUX_CONFIG.get("IDB_TOKEN", ""), 
+    org=INFLUX_CONFIG.get("IDB_ORG", ""),
+    database=INFLUX_CONFIG.get("IDB_BUCKET", "")
+  )
+except Exception as e:
+  print(f"[{datetime.fromtimestamp(time())}] {e}: InfluxDB Init Error!")
 
 TOPIC_CONFIG = "config/"
 DATA_PATH = "sensors"
 MQTT_BROKER = "localhost"
 MQTT_PORT = 1883
 COAP_PORT = 5683
-HTTP_PORT = 8080 
+HTTP_PORT = 8080
+# Default ports of each protocol used for communication, but made them explicit for allowing tests on different ports
 
 
-def on_connect(client, userdata, flags, reason_code, properties):
+def on_connect(client, userdata, flags, rc, properties):
   
-  if reason_code == 0:
-    print(f"[{datetime.fromtimestamp(time())}] MQTT Connection established.")
+  if rc == 0:
+    print(f"[{datetime.fromtimestamp(time())}] MQTT connection established.")
     for topic in userdata.keys():
-      client.publish(TOPIC_CONFIG + topic, userdata[topic], retain=True)
-    print("Config:") 
-    print(f" - protocol: {userdata['protocol']}")
-    print(f" - sampling_rate: {userdata['sampling_rate']}")
-    print(f" - motion_alert: {userdata['motion_alert']}")
+      client.publish(f"{TOPIC_CONFIG}{topic}", userdata[topic], retain=True)
+    print(f"   Config: {userdata}")
+  else:
+    print(f"[{datetime.fromtimestamp(time())}] ConnectionError: MQTT connection failed.")
 
 
-def save_to_influx(client, payload_dict):
+def save_to_influx(payload_dict):
 
   try:
-    temp, hum, light = payload_dict["temperature"], payload_dict["humidity"], payload_dict["light"]
+    temp = float(payload_dict.get("temperature", 0))
+    hum = float(payload_dict.get("humidity", 0))
+    light = float(payload_dict.get("light", 0))
+    timestamp = datetime.now(timezone.utc)    # Since natively InfluxDB works with UTC timestamps
     point = Point("sensors") \
-      .tag("node_id", "main_hall") \
+      .tag("node_id", "") \
       .field("temperature", temp) \
       .field("humidity", hum) \
-      .field("light", light)
-    client.write(point)
+      .field("light", light) \
+      .time(timestamp)
+    INFLUX_CLIENT.write(point)
+    # This call is blocking, so if the Influx server is slow it could block any other process (MQTT, CoAP/HTTP).
+    # Since this is a small prototype, it is possible to use it like above, otherwise it should be inserted into a thread executor.
 
   except Exception as e:
-    print(f"InfluxDB saving error: {e}")
+    print(f"[{datetime.fromtimestamp(time())}] InfluxDB saving error: {e}")
+
+
+class CoAPResource(resource.Resource):
+
+  async def render_put(self, request):
+    try:
+      payload = request.payload.decode('utf-8')
+      data = json.loads(payload)
+      print(f"[{datetime.fromtimestamp(time())}] Data received: {data}.")
+      save_to_influx(data)
+      return aiocoap.Message(code=aiocoap.CHANGED, payload=b"OK CoAP")
+    except json.JSONDecodeError:
+      print(f"[{datetime.fromtimestamp(time())}] Decoding Error in the JSON message format.")
+      return aiocoap.Message(code=aiocoap.BAD_REQUEST, payload=b"Invalid JSON")
+    except Exception as e:
+      print(f"[{datetime.fromtimestamp(time())}] Internal Server Error: {e}.")
+      return aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR)
+
+
+async def http_handler(request):
+
+  try:
+    data = await request.json()
+    print(f"[{datetime.fromtimestamp(time())}] Data received: {data}.")
+    save_to_influx(data)
+    return web.Response(text="OK HTTP")
+  except json.JSONDecodeError:
+    print(f"[{datetime.fromtimestamp(time())}] Decoding Error in the JSON message format.")
+    return web.Response(status=400, text="Invalid JSON")
+  except Exception as e:
+    print(f"[{datetime.fromtimestamp(time())}] Internal Server Error: {e}.")
+    return web.Response(status=500, text="Server Error")
 
 
 async def main(config):
 
-  protocol, sampling_rate, motion_alert = config['protocol'], config['sampling_rate'], config['motion_alert']
+  protocol = config['protocol']
   
   # Client MQTT
   mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, userdata=config)
@@ -69,26 +111,38 @@ async def main(config):
   mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)   # 60 is the keepalive seconds parameter (for system resilience)
   mqtt_client.loop_start()
 
-  # Influx client
-  influx_client = InfluxDBClient3(
-    host=IDB_HOST, 
-    token=IDB_TOKEN, 
-    org=IDB_ORG,
-    database=IDB_BUCKET
-    )
-
   # CoAP/HTTP handler
   if protocol == 'coap':
-    pass
+    try:
+      root = resource.Site()
+      root.add_resource([DATA_PATH], CoAPResource())
+      # coap_task = asyncio.create_task(     # CoAP non-blocking task
+      #   aiocoap.Context.create_server_context(root, bind=('0.0.0.0', COAP_PORT))
+      # )
+      # await aiocoap.Context.create_server_context(root, bind=('0.0.0.0', COAP_PORT))    # listening on coap://<IP>:5683/sensors
+      await aiocoap.Context.create_server_context(root, bind=('192.168.1.17', COAP_PORT))    # listening on coap://192.168.1.17:5683/sensors
+    except KeyboardInterrupt as ke:
+      print(f"[{datetime.fromtimestamp(time())}] {ke}: CoAP interrupted!")
+
   elif protocol == 'http':
-    pass
+    try:
+      app = web.Application()
+      app.router.add_post(f"/{DATA_PATH}", http_handler)
+      runner = web.AppRunner(app)
+      await runner.setup()
+      site = web.TCPSite(runner, '0.0.0.0', HTTP_PORT)    # listening on http://<IP>:8080/sensors
+      await site.start()
+    except KeyboardInterrupt as ke:
+      print(f"[{datetime.fromtimestamp(time())}] {ke}: HTTP interrupted!")
 
   # Stopping
   try:
     await asyncio.get_running_loop().create_future()
+  except asyncio.CancelledError:
+    pass
   except KeyboardInterrupt:
-    print("Spegnimento...")
     mqtt_client.loop_stop()
+    mqtt_client.disconnect()
 
 
 if __name__ == "__main__":
@@ -121,7 +175,7 @@ if __name__ == "__main__":
       "sampling_rate": args.sampling_rate,
       "motion_alert": 15
     }
-    print("Error: motion_alert must be greater than 10 seconds. Set to default value of 15 seconds.")
+    print(f"[{datetime.fromtimestamp(time())}] ConfigError: motion_alert must be greater than 10 seconds. Set to default value of 15 seconds.")
   else:
     config_data = {
       "protocol": args.protocol,
@@ -129,4 +183,7 @@ if __name__ == "__main__":
       "motion_alert": args.motion_alert
     }
   
-  asyncio.run(main(config_data))
+  try:
+    asyncio.run(main(config_data))
+  except KeyboardInterrupt as ke:
+    print(f"[{datetime.fromtimestamp(time())}] {ke}")
