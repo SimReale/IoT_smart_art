@@ -24,6 +24,7 @@ TaskHandle_t TaskMotionDetection;
 String protocol = "coap";   // "coap" or "http"
 int sampling_rate = 60;
 int motion_alert = 15;
+unsigned long last_telemetry_time = 0;
 
 
 
@@ -43,37 +44,50 @@ void setup() {
   coap.start();
   digitalWrite(LEDPIN, LOW);
 
-  xTaskCreatePinnedToCore(motion_detection_task, "Motion_Detection", 1024, NULL, 2, &TaskMotionDetection, 1);
+  xTaskCreatePinnedToCore(motion_detection_task, "Motion_Detection", 4096, NULL, 2, &TaskMotionDetection, 1);
 }
 
 
 
 void loop() {
 
-  // Keeping MQTT connection alive
   if (!client.connected()) {
     digitalWrite(LEDPIN, HIGH);
     connectMQTT();
     digitalWrite(LEDPIN, LOW);
   }
-  client.loop();
+  client.loop(); 
 
-  // Sensors reading
-  float hum = dht.readHumidity();
-  float temp = dht.readTemperature();
-  int light = analogRead(LIGHTPIN);
+  unsigned long now = millis();
+  
+  if (now - last_telemetry_time > (sampling_rate * 1000)) {
+    
+    last_telemetry_time = now;
 
-  char payload[100];
-  sprintf(payload, "{\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, light);
-  if (DEBUG){
-    Serial.println(payload);
+    float hum = dht.readHumidity();
+    float temp = dht.readTemperature();
+    int light = analogRead(LIGHTPIN);
+
+    if (isnan(hum) || isnan(temp)) {
+      if (DEBUG) Serial.println("Errore lettura DHT!");
+      return;
+    }
+
+    char payload[100];
+    sprintf(payload, "{\"node_id\":\"smart_art_1\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, light);
+
+    if (DEBUG) {
+      Serial.println(payload);
+    }
+
+    if (protocol == "coap") {
+      CoAPSend(payload);
+    } else if (protocol == "http") {
+      HTTPSend(payload);
+    }
   }
-  if (protocol == "coap"){
-    CoAPSend(payload);
-  } else if (protocol == "http"){
-    HTTPSend(payload);
-  }
-  vTaskDelay(pdMS_TO_TICKS(sampling_rate * 1000));
+  
+  vTaskDelay(pdMS_TO_TICKS(10)); 
 }
 
 

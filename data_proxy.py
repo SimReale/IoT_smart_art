@@ -1,4 +1,3 @@
-import sys
 import asyncio
 import argparse
 import yaml
@@ -51,12 +50,13 @@ def on_connect(client, userdata, flags, rc, properties):
 def save_to_influx(payload_dict):
 
   try:
+    node_id = str(payload_dict.get("node_id", ""))
     temp = float(payload_dict.get("temperature", 0))
     hum = float(payload_dict.get("humidity", 0))
     light = float(payload_dict.get("light", 0))
     timestamp = datetime.now(timezone.utc)    # Since natively InfluxDB works with UTC timestamps
     point = Point("sensors") \
-      .tag("node_id", "") \
+      .tag("node_id", node_id) \
       .field("temperature", temp) \
       .field("humidity", hum) \
       .field("light", light) \
@@ -116,11 +116,7 @@ async def main(config):
     try:
       root = resource.Site()
       root.add_resource([DATA_PATH], CoAPResource())
-      # coap_task = asyncio.create_task(     # CoAP non-blocking task
-      #   aiocoap.Context.create_server_context(root, bind=('0.0.0.0', COAP_PORT))
-      # )
-      # await aiocoap.Context.create_server_context(root, bind=('0.0.0.0', COAP_PORT))    # listening on coap://<IP>:5683/sensors
-      await aiocoap.Context.create_server_context(root, bind=('192.168.1.17', COAP_PORT))    # listening on coap://192.168.1.17:5683/sensors
+      await aiocoap.Context.create_server_context(root, bind=('192.168.1.7', COAP_PORT))    # listening on coap://192.168.1.7:5683/sensors
     except KeyboardInterrupt as ke:
       print(f"[{datetime.fromtimestamp(time())}] {ke}: CoAP interrupted!")
 
