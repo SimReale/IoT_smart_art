@@ -97,19 +97,28 @@ void motion_detection_task(void* parameters){
   for (;;){
     int motion = digitalRead(PIRPIN);
     int count = 0;
+    bool pub = false;
     if (DEBUG && motion == HIGH){
       Serial.println("Motion detected!");
     }
     while (motion == HIGH){
       count++;
-      if (count/2 >= motion_alert){
+      if (count/2 >= motion_alert && pub == false){
         client.publish(TOPIC_MOTION, "1");
+        pub = true;
         if (DEBUG){
           Serial.println("Motion published!");
         }
       }
       motion = digitalRead(PIRPIN);
       vTaskDelay(pdMS_TO_TICKS(500));
+    }
+    if (count/2 >= motion_alert && motion == LOW){
+      client.publish(TOPIC_MOTION, "0");
+      pub = false;
+      if (DEBUG){
+        Serial.println("Motion reset!");
+      }
     }
     vTaskDelay(pdMS_TO_TICKS(500));
   }

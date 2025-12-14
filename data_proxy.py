@@ -1,5 +1,6 @@
 import asyncio
 import argparse
+import socket
 import yaml
 import json
 import paho.mqtt.client as mqtt
@@ -27,6 +28,7 @@ try:
 except Exception as e:
   print(f"[{datetime.fromtimestamp(time())}] {e}: InfluxDB Init Error!")
 
+PROXY_NODE_ADDRESS = socket.gethostbyname(socket.gethostname())
 TOPIC_CONFIG = "config/"
 DATA_PATH = "sensors"
 MQTT_BROKER = "localhost"
@@ -42,7 +44,8 @@ def on_connect(client, userdata, flags, rc, properties):
     print(f"[{datetime.fromtimestamp(time())}] MQTT connection established.")
     for topic in userdata.keys():
       client.publish(f"{TOPIC_CONFIG}{topic}", userdata[topic], retain=True)
-    print(f"   Config: {userdata}")
+    print(f"   - Config: {userdata}")
+    print(f"   - IP: {PROXY_NODE_ADDRESS}")
   else:
     print(f"[{datetime.fromtimestamp(time())}] ConnectionError: MQTT connection failed.")
 
@@ -116,7 +119,7 @@ async def main(config):
     try:
       root = resource.Site()
       root.add_resource([DATA_PATH], CoAPResource())
-      await aiocoap.Context.create_server_context(root, bind=('192.168.1.7', COAP_PORT))    # listening on coap://192.168.1.7:5683/sensors
+      await aiocoap.Context.create_server_context(root, bind=(PROXY_NODE_ADDRESS, COAP_PORT))    # listening on coap://<IP>:5683/sensors
     except KeyboardInterrupt as ke:
       print(f"[{datetime.fromtimestamp(time())}] {ke}: CoAP interrupted!")
 
@@ -126,12 +129,11 @@ async def main(config):
       app.router.add_post(f"/{DATA_PATH}", http_handler)
       runner = web.AppRunner(app)
       await runner.setup()
-      site = web.TCPSite(runner, '0.0.0.0', HTTP_PORT)    # listening on http://<IP>:8080/sensors
+      site = web.TCPSite(runner, PROXY_NODE_ADDRESS, HTTP_PORT)    # listening on http://<IP>:8080/sensors
       await site.start()
     except KeyboardInterrupt as ke:
       print(f"[{datetime.fromtimestamp(time())}] {ke}: HTTP interrupted!")
 
-  # Stopping
   try:
     await asyncio.get_running_loop().create_future()
   except asyncio.CancelledError:
