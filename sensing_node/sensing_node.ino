@@ -37,6 +37,7 @@ void setup() {
   pinMode(LEDPIN, OUTPUT);
 
   digitalWrite(LEDPIN, HIGH);
+  analogSetAttenuation(ADC_11db);
   setupWiFi();
   client.setServer(SERVER_ADDRESS, MQTT_PORT);
   client.setCallback(SetupCallback);
@@ -60,14 +61,18 @@ void loop() {
 
   unsigned long now = millis();
   
-  if (now - last_telemetry_time > (sampling_rate * 1000)) {
+  if (now - last_telemetry_time >= (sampling_rate * 1000)) {
     
     last_telemetry_time = now;
 
     float hum = dht.readHumidity();
     float temp = dht.readTemperature();
     int light = analogRead(LIGHTPIN);
-
+    /*
+    float light_V = float(light) * (3.3 / 4095.0);
+    float light_muA = (light_V / 10000.0) * 1000000.0;
+    float light_lux = light_muA * 2;
+    */
     if (isnan(hum) || isnan(temp)) {
       if (DEBUG) Serial.println("Errore lettura DHT!");
       return;

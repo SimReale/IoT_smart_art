@@ -3,30 +3,30 @@ import argparse
 import socket
 import yaml
 import json
+import pandas as pd
 import paho.mqtt.client as mqtt
 import aiocoap.resource as resource
 import aiocoap
 from aiohttp import web
 from influxdb_client_3 import InfluxDBClient3, Point
+from prophet.serialize import model_from_json
 from time import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 # Load InfluxDB config
-CONFIG_PATH = Path.cwd().joinpath("influx_config.yaml")
+WORKING_DIR = Path.cwd()
+CONFIG_PATH = WORKING_DIR.joinpath("influx_config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
   INFLUX_CONFIG = yaml.safe_load(_f) or {}
 
-try:
-  INFLUX_CLIENT = InfluxDBClient3(
-    host=INFLUX_CONFIG.get("IDB_HOST", ""), 
-    token=INFLUX_CONFIG.get("IDB_TOKEN", ""), 
-    org=INFLUX_CONFIG.get("IDB_ORG", ""),
-    database=INFLUX_CONFIG.get("IDB_BUCKET", "")
-  )
-except Exception as e:
-  print(f"[{datetime.fromtimestamp(time())}] {e}: InfluxDB Init Error!")
+INFLUX_CLIENT = InfluxDBClient3(
+  host=INFLUX_CONFIG.get("IDB_HOST", ""), 
+  token=INFLUX_CONFIG.get("IDB_TOKEN", ""), 
+  org=INFLUX_CONFIG.get("IDB_ORG", ""),
+  database=INFLUX_CONFIG.get("IDB_BUCKET", "")
+)
 
 PROXY_NODE_ADDRESS = socket.gethostbyname(socket.gethostname())
 TOPIC_CONFIG = "config/"
@@ -57,16 +57,56 @@ def save_to_influx(payload_dict):
     temp = float(payload_dict.get("temperature", 0))
     hum = float(payload_dict.get("humidity", 0))
     light = float(payload_dict.get("light", 0))
+    light_V = float(light) * (3.3 / 4095.0)
+    light_muA = (light_V / 10000.0) * 1000000.0
+    light_lux = light_muA * 2
     timestamp = datetime.now(timezone.utc)    # Since natively InfluxDB works with UTC timestamps
     point = Point("sensors") \
       .tag("node_id", node_id) \
       .field("temperature", temp) \
       .field("humidity", hum) \
-      .field("light", light) \
+      .field("light", light_lux) \
       .time(timestamp)
     INFLUX_CLIENT.write(point)
     # This call is blocking, so if the Influx server is slow it could block any other process (MQTT, CoAP/HTTP).
     # Since this is a small prototype, it is possible to use it like above, otherwise it should be inserted into a thread executor.
+    
+    data_forecast = {'node_id': node_id}
+    for field_name in ['temperature', 'humidity', 'light']:
+      if field_name == 'temperature':
+          upper_bound = 80
+          lower_bound = -40
+      elif field_name =='humidity':
+          upper_bound = 100
+          lower_bound = 0
+      elif field_name == 'light':
+          upper_bound = 660
+          lower_bound = 0
+
+      with open(WORKING_DIR.joinpath('forecasting_models', f'model_{field_name}.json'), 'r') as fin:
+        prophet_model = model_from_json(json.load(fin))
+      
+      future_data = pd.date_range(
+        start=pd.Timestamp.now(tz=None).ceil('5min'), 
+        periods=288, 
+        freq='5min'
+      )
+      future_data = pd.DataFrame({'ds': future_data})
+      future_data['floor'] = lower_bound
+      future_data['cap'] = upper_bound
+      forecast = prophet_model.predict(future_data)
+      forecast['ds'] = forecast['ds'].dt.tz_localize('UTC')
+
+      data_forecast['time'] = forecast['ds'].to_list()
+      data_forecast[field_name] = forecast['yhat'].to_list()
+    
+    df_forecast = pd.DataFrame(data_forecast)
+    INFLUX_CLIENT.write(
+      record=df_forecast,
+      data_frame_measurement_name="sensors_forecast",
+      data_frame_timestamp_column='time',
+      data_frame_tag_columns=['node_id']
+    )
 
   except Exception as e:
     print(f"[{datetime.fromtimestamp(time())}] InfluxDB saving error: {e}")
