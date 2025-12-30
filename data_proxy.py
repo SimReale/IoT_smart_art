@@ -1,8 +1,10 @@
 import asyncio
 import argparse
+import logging
 import socket
 import yaml
 import json
+import numpy as np
 import pandas as pd
 import paho.mqtt.client as mqtt
 import aiocoap.resource as resource
@@ -21,13 +23,6 @@ CONFIG_PATH = WORKING_DIR.joinpath("influx_config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
   INFLUX_CONFIG = yaml.safe_load(_f) or {}
 
-INFLUX_CLIENT = InfluxDBClient3(
-  host=INFLUX_CONFIG.get("IDB_HOST", ""), 
-  token=INFLUX_CONFIG.get("IDB_TOKEN", ""), 
-  org=INFLUX_CONFIG.get("IDB_ORG", ""),
-  database=INFLUX_CONFIG.get("IDB_BUCKET", "")
-)
-
 PROXY_NODE_ADDRESS = socket.gethostbyname(socket.gethostname())
 TOPIC_CONFIG = "config/"
 DATA_PATH = "sensors"
@@ -37,20 +32,32 @@ COAP_PORT = 5683
 HTTP_PORT = 8080
 # Default ports of each protocol used for communication, but made them explicit for allowing tests on different ports
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 
 def on_connect(client, userdata, flags, rc, properties):
   
   if rc == 0:
-    print(f"[{datetime.fromtimestamp(time())}] MQTT connection established.")
+    logging.info("MQTT connection established.")
     for topic in userdata.keys():
       client.publish(f"{TOPIC_CONFIG}{topic}", userdata[topic], retain=True)
     print(f"   - Config: {userdata}")
     print(f"   - IP: {PROXY_NODE_ADDRESS}")
   else:
-    print(f"[{datetime.fromtimestamp(time())}] ConnectionError: MQTT connection failed.")
+    logging.error("ConnectionError: MQTT connection failed.")
 
 
 def save_to_influx(payload_dict):
+
+  INFLUX_CLIENT = InfluxDBClient3(
+    host=INFLUX_CONFIG.get("IDB_HOST", ""), 
+    token=INFLUX_CONFIG.get("IDB_TOKEN", ""), 
+    org=INFLUX_CONFIG.get("IDB_ORG", ""),
+    database=INFLUX_CONFIG.get("IDB_BUCKET", "")
+  )
 
   try:
     node_id = str(payload_dict.get("node_id", ""))
@@ -72,16 +79,15 @@ def save_to_influx(payload_dict):
     # Since this is a small prototype, it is possible to use it like above, otherwise it should be inserted into a thread executor.
     
     data_forecast = {'node_id': node_id}
+    lower_bound = 0
     for field_name in ['temperature', 'humidity', 'light']:
       if field_name == 'temperature':
           upper_bound = 80
-          lower_bound = -40
       elif field_name =='humidity':
           upper_bound = 100
-          lower_bound = 0
       elif field_name == 'light':
           upper_bound = 660
-          lower_bound = 0
+      upper_bound_log = np.log1p(upper_bound)
 
       with open(WORKING_DIR.joinpath('forecasting_models', f'model_{field_name}.json'), 'r') as fin:
         prophet_model = model_from_json(json.load(fin))
@@ -93,12 +99,12 @@ def save_to_influx(payload_dict):
       )
       future_data = pd.DataFrame({'ds': future_data})
       future_data['floor'] = lower_bound
-      future_data['cap'] = upper_bound
+      future_data['cap'] = upper_bound_log
       forecast = prophet_model.predict(future_data)
       forecast['ds'] = forecast['ds'].dt.tz_localize('UTC')
 
-      data_forecast['time'] = forecast['ds'].to_list()
-      data_forecast[field_name] = forecast['yhat'].to_list()
+      data_forecast['time'] = forecast['ds']
+      data_forecast[field_name] = np.expm1(forecast['yhat']).clip(lower=lower_bound, upper=upper_bound)
     
     df_forecast = pd.DataFrame(data_forecast)
     INFLUX_CLIENT.write(
@@ -109,7 +115,7 @@ def save_to_influx(payload_dict):
     )
 
   except Exception as e:
-    print(f"[{datetime.fromtimestamp(time())}] InfluxDB saving error: {e}")
+    logging.error("InfluxDB saving error: {e}")
 
 
 class CoAPResource(resource.Resource):
@@ -118,14 +124,14 @@ class CoAPResource(resource.Resource):
     try:
       payload = request.payload.decode('utf-8')
       data = json.loads(payload)
-      print(f"[{datetime.fromtimestamp(time())}] Data received: {data}.")
+      logging.info(f"Data received: {data}.")
       save_to_influx(data)
       return aiocoap.Message(code=aiocoap.CHANGED, payload=b"OK CoAP")
     except json.JSONDecodeError:
-      print(f"[{datetime.fromtimestamp(time())}] Decoding Error in the JSON message format.")
+      logging.error("Decoding Error in the JSON message format.")
       return aiocoap.Message(code=aiocoap.BAD_REQUEST, payload=b"Invalid JSON")
     except Exception as e:
-      print(f"[{datetime.fromtimestamp(time())}] Internal Server Error: {e}.")
+      logging.error(f"Internal Server Error: {e}.")
       return aiocoap.Message(code=aiocoap.INTERNAL_SERVER_ERROR)
 
 
@@ -133,14 +139,14 @@ async def http_handler(request):
 
   try:
     data = await request.json()
-    print(f"[{datetime.fromtimestamp(time())}] Data received: {data}.")
+    logging.info(f"Data received: {data}.")
     save_to_influx(data)
     return web.Response(text="OK HTTP")
   except json.JSONDecodeError:
-    print(f"[{datetime.fromtimestamp(time())}] Decoding Error in the JSON message format.")
+    logging.error("Decoding Error in the JSON message format.")
     return web.Response(status=400, text="Invalid JSON")
   except Exception as e:
-    print(f"[{datetime.fromtimestamp(time())}] Internal Server Error: {e}.")
+    logging.error(f"Internal Server Error: {e}.")
     return web.Response(status=500, text="Server Error")
 
 
@@ -161,7 +167,7 @@ async def main(config):
       root.add_resource([DATA_PATH], CoAPResource())
       await aiocoap.Context.create_server_context(root, bind=(PROXY_NODE_ADDRESS, COAP_PORT))    # listening on coap://<IP>:5683/sensors
     except KeyboardInterrupt as ke:
-      print(f"[{datetime.fromtimestamp(time())}] {ke}: CoAP interrupted!")
+      logging.error(f"{ke}: CoAP interrupted!")
 
   elif protocol == 'http':
     try:
@@ -172,7 +178,7 @@ async def main(config):
       site = web.TCPSite(runner, PROXY_NODE_ADDRESS, HTTP_PORT)    # listening on http://<IP>:8080/sensors
       await site.start()
     except KeyboardInterrupt as ke:
-      print(f"[{datetime.fromtimestamp(time())}] {ke}: HTTP interrupted!")
+      logging.error(f"{ke}: HTTP interrupted!")
 
   try:
     await asyncio.get_running_loop().create_future()
@@ -224,4 +230,4 @@ if __name__ == "__main__":
   try:
     asyncio.run(main(config_data))
   except KeyboardInterrupt as ke:
-    print(f"[{datetime.fromtimestamp(time())}] {ke}")
+    logging.error(f"{ke}")
