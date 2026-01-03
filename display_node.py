@@ -7,6 +7,7 @@ from influxdb_client_3 import InfluxDBClient3
 from pathlib import Path
 
 
+# Load InfluxDB config
 WORKING_DIR = Path.cwd()
 CONFIG_PATH = WORKING_DIR.joinpath("influx_config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
@@ -86,6 +87,7 @@ def on_message(client, userdata, msg):
 def draw_generative_art(screen, ticks):
 
     center = (WIDTH // 2, HEIGHT // 2)
+    scale_freq = 0.02
 
     t = art_state["temperature"]
     r = int(map_val(t, 15, 25, 0, 255))
@@ -98,21 +100,10 @@ def draw_generative_art(screen, ticks):
     h = art_state["light"]
     speed_factor = map_val(h, 0, 100, 0.2, 2.0)
 
-    # --- EYE SHAPE --- #
-    # Iris
-    # num_lines = 90
-    # for i in range(num_lines):
-    #     angle = math.radians((360 / num_lines) * i + (ticks * speed_factor))
-    #     end_x = center[0] + math.cos(angle) * radius_base
-    #     end_y = center[1] + math.sin(angle) * radius_base
-    #     thickness = int(2 + math.sin(ticks * 0.05) * 2)
-
-    #     pygame.draw.line(screen, color, center, (end_x, end_y), thickness)
-    #     pygame.draw.circle(screen, (255, 255, 255), (int(end_x), int(end_y)), 2)
-    
+    # --- EYE SHAPE --- #    
     # Contour
     eye_width = radius_base * 4
-    eye_height = radius_base * 2 * math.sin(ticks * 0.05)
+    eye_height = radius_base * 2 * math.sin(ticks * scale_freq)
     rect_x = center[0] - (eye_width // 2)
     rect_y = center[1] - (eye_height // 2)
     eye_rect = pygame.Rect(rect_x, rect_y, int(eye_width), int(eye_height))
@@ -120,14 +111,14 @@ def draw_generative_art(screen, ticks):
 
     # Iris
     iris_width = radius_base * 2
-    iris_height = radius_base * 2 * math.sin(ticks * 0.05)
+    iris_height = radius_base * 2 * math.sin(ticks * scale_freq)
     rect_x = center[0] - (iris_width // 2)
     rect_y = center[1] - (iris_height // 2)
     iris_rect = pygame.Rect(rect_x, rect_y, int(iris_width), int(iris_height))
     pygame.draw.ellipse(screen, color, iris_rect)
 
     iris_width = radius_base * 2
-    iris_height = radius_base * 2 * math.sin(ticks * 0.05)
+    iris_height = radius_base * 2 * math.sin(ticks * scale_freq)
     rect_x = center[0] - (iris_width // 2)
     rect_y = center[1] - (iris_height // 2)
     iris_rect = pygame.Rect(rect_x, rect_y, int(iris_width), int(iris_height))
@@ -135,18 +126,17 @@ def draw_generative_art(screen, ticks):
     pygame.draw.ellipse(screen, BG_COLOR, iris_rect, 3)
 
     # Pupil
-    pupil_perc = 0.4
-    num_lines = 45
+    pupil_perc = 0.5
+    num_lines = 72
     for i in range(num_lines):
         angle = math.radians((360 / num_lines) * i + (ticks * speed_factor))
         end_x = center[0] + math.cos(angle) * radius_base * pupil_perc
-        end_y = center[1] + math.sin(angle) * radius_base * pupil_perc * math.sin(ticks * 0.05)
-        thickness = int(2 + math.sin(ticks * 0.05) * 2)
+        end_y = center[1] + math.sin(angle) * radius_base * pupil_perc * math.sin(ticks * scale_freq)
+        thickness = int(2 + math.sin(ticks * scale_freq) * 2)
         pygame.draw.line(screen, BG_COLOR, center, (end_x, end_y), thickness)
 
-    
     pupil_width = radius_base * pupil_perc
-    pupil_height = radius_base * pupil_perc * math.sin(ticks * 0.05)
+    pupil_height = radius_base * pupil_perc * math.sin(ticks * scale_freq)
     rect_x = center[0] - (pupil_width // 2)
     rect_y = center[1] - (pupil_height // 2)
     pupil_rect = pygame.Rect(rect_x, rect_y, int(pupil_width), int(pupil_height))

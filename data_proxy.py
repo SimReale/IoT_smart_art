@@ -12,7 +12,6 @@ import aiocoap
 from aiohttp import web
 from influxdb_client_3 import InfluxDBClient3, Point
 from prophet.serialize import model_from_json
-from time import time
 from datetime import datetime, timezone
 from pathlib import Path
 
