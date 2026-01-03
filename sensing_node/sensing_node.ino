@@ -109,7 +109,7 @@ void motion_detection_task(void* parameters){
     while (motion == HIGH){
       count++;
       if (count/2 >= motion_alert && pub == false){
-        client.publish(TOPIC_MOTION, "1");
+        client.publish(TOPIC_MOTION, "1", true);
         pub = true;
         if (DEBUG){
           Serial.println("Motion published!");
@@ -119,7 +119,7 @@ void motion_detection_task(void* parameters){
       vTaskDelay(pdMS_TO_TICKS(500));
     }
     if (count/2 >= motion_alert && motion == LOW){
-      client.publish(TOPIC_MOTION, "0");
+      client.publish(TOPIC_MOTION, "0", true);
       pub = false;
       if (DEBUG){
         Serial.println("Motion reset!");

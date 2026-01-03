@@ -24,6 +24,7 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
   INFLUX_CONFIG = yaml.safe_load(_f) or {}
 
 PROXY_NODE_ADDRESS = socket.gethostbyname(socket.gethostname())
+PROXY_CLIENT_ID = "DataProxy"
 TOPIC_CONFIG = "config/"
 DATA_PATH = "sensors"
 MQTT_BROKER = "localhost"
@@ -155,7 +156,7 @@ async def main(config):
   protocol = config['protocol']
   
   # Client MQTT
-  mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, userdata=config)
+  mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, PROXY_CLIENT_ID, userdata=config)
   mqtt_client.on_connect = on_connect
   mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)   # 60 is the keepalive seconds parameter (for system resilience)
   mqtt_client.loop_start()
@@ -219,7 +220,7 @@ if __name__ == "__main__":
       "sampling_rate": args.sampling_rate,
       "motion_alert": 15
     }
-    print(f"[{datetime.fromtimestamp(time())}] ConfigError: motion_alert must be greater than 10 seconds. Set to default value of 15 seconds.")
+    logging.error("ConfigError: motion_alert must be greater than 10 seconds. Set to default value of 15 seconds.")
   else:
     config_data = {
       "protocol": args.protocol,
