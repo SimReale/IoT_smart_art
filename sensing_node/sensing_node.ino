@@ -68,18 +68,19 @@ void loop() {
     float hum = dht.readHumidity();
     float temp = dht.readTemperature();
     int light = analogRead(LIGHTPIN);
-    /*
-    float light_V = float(light) * (3.3 / 4095.0);
-    float light_muA = (light_V / 10000.0) * 1000000.0;
-    float light_lux = light_muA * 2;
-    */
+
+    // ADCOut-to-Lux conversion based on the datasheet conversion factor (10 muA ~ 20 lux)
+    float light_V = (float)light * (3.3 / 4095.0);      // actual voltage on the pin
+    float light_muA = (light_V / 10000.0) * 1000000.0;  // current (muA) that flows in the circuit
+    float light_lux = light_muA * 2.0;                  // muA to lux
+
     if (isnan(hum) || isnan(temp)) {
-      if (DEBUG) Serial.println("Errore lettura DHT!");
+      if (DEBUG) Serial.println("DHT Reading Error!");
       return;
     }
 
     char payload[100];
-    sprintf(payload, "{\"node_id\":\"smart_art_1\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, light);
+    sprintf(payload, "{\"node_id\":\"smart_art_1\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, (int)light_lux);
 
     if (DEBUG) {
       Serial.println(payload);
@@ -154,6 +155,7 @@ void HTTPSend(const char* payload){
 
   String server_URL = "http://" + String(SERVER_ADDRESS) + ":" + String(HTTP_PORT) + "/" + String(DATA_PATH);
   http.begin(server_URL);
+  http.setTimeout(20000);
   http.addHeader("Content-Type", "application/json");
   
   int http_code = http.POST(payload);

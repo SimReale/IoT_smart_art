@@ -13,7 +13,7 @@
 #define LIGHTPIN 34
 
 // MQTT parameters
-#define SERVER_ADDRESS "192.168.68.113"
+#define SERVER_ADDRESS "192.168.68.102"
 #define MQTT_PORT 1883
 #define COAP_PORT 5683
 #define HTTP_PORT 8080

@@ -64,15 +64,12 @@ def save_to_influx(payload_dict):
     temp = float(payload_dict.get("temperature", 0))
     hum = float(payload_dict.get("humidity", 0))
     light = float(payload_dict.get("light", 0))
-    light_V = float(light) * (3.3 / 4095.0)
-    light_muA = (light_V / 10000.0) * 1000000.0
-    light_lux = light_muA * 2
     timestamp = datetime.now(timezone.utc)    # Since natively InfluxDB works with UTC timestamps
     point = Point("sensors") \
       .tag("node_id", node_id) \
       .field("temperature", temp) \
       .field("humidity", hum) \
-      .field("light", light_lux) \
+      .field("light", light) \
       .time(timestamp)
     INFLUX_CLIENT.write(point)
     # This call is blocking, so if the Influx server is slow it could block any other process (MQTT, CoAP/HTTP).
@@ -213,7 +210,7 @@ if __name__ == "__main__":
   )
   args = parser.parse_args()
 
-  if args.motion_alert <= 10:
+  if args.motion_alert < 10:
     config_data = {
       "protocol": args.protocol,
       "sampling_rate": args.sampling_rate,

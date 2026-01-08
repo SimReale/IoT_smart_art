@@ -16,7 +16,3 @@ It also emphasizes creativity, exploring how IoT technology can enhance our emot
 ## Dashboard
 
 Link to the dashboard: [Grafana](https://simonereale.grafana.net/goto/df73pdvapm134a?orgId=1)
-
-## Dataset for display style
-
-Link to the dataset: [Interactive Art Environment Dataset (Kaggle)](https://www.kaggle.com/datasets/zyan1999/interactive-art-environment-dataset)

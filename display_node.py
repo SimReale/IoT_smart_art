@@ -13,7 +13,7 @@ CONFIG_PATH = WORKING_DIR.joinpath("influx_config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
   INFLUX_CONFIG = yaml.safe_load(_f) or {}
 
-BROKER_ADDRESS = "192.168.68.113"
+BROKER_ADDRESS = "192.168.68.102"
 BROKER_PORT = 1883
 TOPIC_MOTION = "sensors/motion"
 CLIENT_ID = "DisplayNode"
@@ -25,7 +25,7 @@ art_state = {
     "active": False,
     "temperature": 20.0,
     "humidity": 50.0,
-    "light": 500.0
+    "light": 330
 }
 
 logging.basicConfig(
@@ -41,7 +41,7 @@ def fetch_sensor_data():
             org=INFLUX_CONFIG.get("IDB_ORG", ""),
             database=INFLUX_CONFIG.get("IDB_BUCKET", "")
         )
-        query = 'SELECT "temperature", "humidity", "light" FROM "sensors" ORDER BY time DESC LIMIT 1'
+        query = 'SELECT "temperature", "humidity", "light" FROM "sensors" WHERE "node_id" = \'smart_art_1\' ORDER BY time DESC LIMIT 1'
         df_values = INFLUX_CLIENT.query(query, language='sql').to_pandas()
 
         return {
@@ -51,7 +51,7 @@ def fetch_sensor_data():
         }
     except Exception as e:
         logging.error(f" Query Error: {e}")
-        return {'temperature': 20, 'humidity': 50, 'light': 330}    # default values
+        return {'temperature': 20.0, 'humidity': 50.0, 'light': 330}    # default values
     
 
 def map_val(value, in_min, in_max, out_min, out_max):
@@ -61,7 +61,7 @@ def map_val(value, in_min, in_max, out_min, out_max):
 
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
-        client.subscribe(TOPIC_MOTION)
+        client.subscribe(TOPIC_MOTION, qos=1)
         logging.info(f"Subscribed: {TOPIC_MOTION}")
     else:
         logging.error(f"MQTT Connection Error: {rc}")
@@ -87,7 +87,7 @@ def on_message(client, userdata, msg):
 def draw_generative_art(screen, ticks):
 
     center = (WIDTH // 2, HEIGHT // 2)
-    scale_freq = 0.02
+    scale_freq = 0.025
 
     t = art_state["temperature"]
     r = int(map_val(t, 15, 25, 0, 255))
@@ -98,9 +98,17 @@ def draw_generative_art(screen, ticks):
     radius_base = map_val(l, 0, 100, 25, 150)
 
     h = art_state["light"]
-    speed_factor = map_val(h, 0, 100, 0.2, 2.0)
+    speed_factor = map_val(h, 0, 100, 0.5, 5.0)
 
-    # --- EYE SHAPE --- #    
+    # --- EYE SHAPE --- #
+    num_lines = 72
+    for i in range(num_lines):
+        angle = math.radians((360 / num_lines) * i + (ticks * speed_factor))
+        end_x = center[0] + math.cos(angle) * radius_base * 6
+        end_y = center[1] + math.sin(angle) * radius_base * 6
+        thickness = int(2 + math.sin(ticks * scale_freq) * 2)
+        pygame.draw.line(screen, (100, 100, 255), center, (end_x, end_y), thickness)
+
     # Contour
     eye_width = radius_base * 4
     eye_height = radius_base * 2 * math.sin(ticks * scale_freq)
@@ -122,19 +130,11 @@ def draw_generative_art(screen, ticks):
     rect_x = center[0] - (iris_width // 2)
     rect_y = center[1] - (iris_height // 2)
     iris_rect = pygame.Rect(rect_x, rect_y, int(iris_width), int(iris_height))
-    pygame.draw.ellipse(screen, (200, 200, 255), iris_rect, 5)
+    pygame.draw.ellipse(screen, (100, 100, 255), iris_rect, 5)
     pygame.draw.ellipse(screen, BG_COLOR, iris_rect, 3)
 
     # Pupil
-    pupil_perc = 0.5
-    num_lines = 72
-    for i in range(num_lines):
-        angle = math.radians((360 / num_lines) * i + (ticks * speed_factor))
-        end_x = center[0] + math.cos(angle) * radius_base * pupil_perc
-        end_y = center[1] + math.sin(angle) * radius_base * pupil_perc * math.sin(ticks * scale_freq)
-        thickness = int(2 + math.sin(ticks * scale_freq) * 2)
-        pygame.draw.line(screen, BG_COLOR, center, (end_x, end_y), thickness)
-
+    pupil_perc = 0.7
     pupil_width = radius_base * pupil_perc
     pupil_height = radius_base * pupil_perc * math.sin(ticks * scale_freq)
     rect_x = center[0] - (pupil_width // 2)
@@ -168,13 +168,13 @@ if __name__ == "__main__":
             if art_state["active"]:
                 draw_generative_art(screen, ticks)
                 ticks += 1
-                if ticks == 14200:
+                if ticks == 28400:  # to avoid overflow and guarantee sinusoidal continuity through the reset loop
                     ticks = 0
             else:
                 ticks = 0
 
             pygame.display.flip()
-            clock.tick(art_state["humidity"])
+            clock.tick(int(art_state["humidity"]))
 
     except KeyboardInterrupt:
         client.loop_stop()
