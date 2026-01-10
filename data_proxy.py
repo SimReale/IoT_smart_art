@@ -154,7 +154,7 @@ async def main(config):
   # Client MQTT
   mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, PROXY_CLIENT_ID, userdata=config)
   mqtt_client.on_connect = on_connect
-  mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)   # 60 is the keepalive seconds parameter (for system resilience)
+  mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
   mqtt_client.loop_start()
 
   # CoAP/HTTP handler
@@ -169,7 +169,7 @@ async def main(config):
   elif protocol == 'http':
     try:
       app = web.Application()
-      app.router.add_post(f"/{DATA_PATH}", http_handler)
+      app.router.add_put(f"/{DATA_PATH}", http_handler)
       runner = web.AppRunner(app)
       await runner.setup()
       site = web.TCPSite(runner, PROXY_NODE_ADDRESS, HTTP_PORT)    # listening on http://<IP>:8080/sensors

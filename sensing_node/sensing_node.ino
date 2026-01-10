@@ -110,7 +110,7 @@ void HTTPSend(const char* payload){
   http.setTimeout(20000);
   http.addHeader("Content-Type", "application/json");
   
-  int http_code = http.POST(payload);
+  int http_code = http.PUT(payload);
   if (DEBUG){
     if (http_code > 0) {
       Serial.println("HTTP message sent:");
