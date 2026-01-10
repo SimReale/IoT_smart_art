@@ -112,7 +112,7 @@ def save_to_influx(payload_dict):
     )
 
   except Exception as e:
-    logging.error("InfluxDB saving error: {e}")
+    logging.error(f"InfluxDB saving error: {e}")
 
 
 class CoAPResource(resource.Resource):

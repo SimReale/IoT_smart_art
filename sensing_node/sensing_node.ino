@@ -50,57 +50,9 @@ void setup() {
 
 
 
-void loop() {
-
-  if (!client.connected()) {
-    digitalWrite(LEDPIN, HIGH);
-    connectMQTT();
-    digitalWrite(LEDPIN, LOW);
-  }
-  client.loop(); 
-
-  unsigned long now = millis();
-  
-  if (now - last_telemetry_time >= (sampling_rate * 1000)) {
-    
-    last_telemetry_time = now;
-
-    float hum = dht.readHumidity();
-    float temp = dht.readTemperature();
-    int light = analogRead(LIGHTPIN);
-
-    // ADCOut-to-Lux conversion based on the datasheet conversion factor (10 muA ~ 20 lux)
-    float light_V = (float)light * (3.3 / 4095.0);      // actual voltage on the pin
-    float light_muA = (light_V / 10000.0) * 1000000.0;  // current (muA) that flows in the circuit
-    float light_lux = light_muA * 2.0;                  // muA to lux
-
-    if (isnan(hum) || isnan(temp)) {
-      if (DEBUG) Serial.println("DHT Reading Error!");
-      return;
-    }
-
-    char payload[100];
-    sprintf(payload, "{\"node_id\":\"smart_art_1\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, (int)light_lux);
-
-    if (DEBUG) {
-      Serial.println(payload);
-    }
-
-    if (protocol == "coap") {
-      CoAPSend(payload);
-    } else if (protocol == "http") {
-      HTTPSend(payload);
-    }
-  }
-  
-  vTaskDelay(pdMS_TO_TICKS(10)); 
-}
-
-
-
 void motion_detection_task(void* parameters){
 
-  for (;;){
+  while (true){
     int motion = digitalRead(PIRPIN);
     int count = 0;
     bool pub = false;
@@ -246,7 +198,7 @@ void SetupCallback(char* topic, byte* message, unsigned int length) {
 
 void setupWiFi(){
 
-  WiFi.mode(WIFI_STA);          // Station mode (client)
+  WiFi.mode(WIFI_STA);
   WiFi.begin(MY_SSID, MY_PASSWORD);
 
   int count = 0;
@@ -290,4 +242,52 @@ void connectMQTT(){
   if(DEBUG){
     Serial.println("Connection established!");
   }
+}
+
+
+
+void loop() {
+
+  if (!client.connected()) {
+    digitalWrite(LEDPIN, HIGH);
+    connectMQTT();
+    digitalWrite(LEDPIN, LOW);
+  }
+  client.loop(); 
+
+  unsigned long now = millis();
+  
+  if (now - last_telemetry_time >= (sampling_rate * 1000)) {
+    
+    last_telemetry_time = now;
+
+    float hum = dht.readHumidity();
+    float temp = dht.readTemperature();
+    int light = analogRead(LIGHTPIN);
+
+    // ADCOut-to-Lux conversion based on the datasheet conversion factor (10 muA ~ 20 lux)
+    float light_V = (float)light * (3.3 / 4095.0);      // actual voltage on the pin
+    float light_muA = (light_V / 10000.0) * 1000000.0;  // current (muA) that flows in the circuit
+    float light_lux = light_muA * 2.0;                  // muA to lux
+
+    if (isnan(hum) || isnan(temp)) {
+      if (DEBUG) Serial.println("DHT Reading Error!");
+      return;
+    }
+
+    char payload[100];
+    sprintf(payload, "{\"node_id\":\"smart_art_1\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, (int)light_lux);
+
+    if (DEBUG) {
+      Serial.println(payload);
+    }
+
+    if (protocol == "http") {
+      HTTPSend(payload);
+    } else {
+      CoAPSend(payload);
+    }
+  }
+  
+  vTaskDelay(pdMS_TO_TICKS(10)); 
 }
