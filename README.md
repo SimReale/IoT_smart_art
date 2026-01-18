@@ -83,15 +83,6 @@ The display node generates a blinking eye visualization where:
 - **InfluxDB 3.0** instance (cloud or self-hosted)
 - **Grafana** (optional, for dashboard visualization)
 
-## Technologies
-
-- **IoT Hardware**: ESP32, DHT22, PIR sensor, TEMT6000 sensor
-- **Communication Protocols**: CoAP, HTTP, MQTT
-- **Database**: InfluxDB 3.0 (time series)
-- **Machine Learning**: Facebook Prophet (time series forecasting)
-- **Visualization**: Pygame, Grafana
-- **Languages**: Python 3, C++ (Arduino)
-
 ## Installation
 
 ### 1. Clone the Repository
