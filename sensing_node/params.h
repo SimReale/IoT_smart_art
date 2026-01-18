@@ -4,8 +4,7 @@
 #define DEBUG 1
 
 // Sensing node parameters
-#define BOARD_UID 1909
-#define BOARD_NAME "sensing_node"
+#define BOARD_NAME "smart_art_1"
 #define DHTPIN 4
 #define DHTTYPE DHT22
 #define PIRPIN 14
@@ -13,7 +12,7 @@
 #define LIGHTPIN 34
 
 // MQTT parameters
-#define SERVER_ADDRESS "192.168.68.102"
+#define SERVER_ADDRESS "172.20.10.2"
 #define MQTT_PORT 1883
 #define COAP_PORT 5683
 #define HTTP_PORT 8080

@@ -1,4 +1,5 @@
 aiocoap
+aiohttp
 paho-mqtt
 influxdb3-python
 pandas

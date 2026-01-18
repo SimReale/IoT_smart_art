@@ -13,7 +13,7 @@ CONFIG_PATH = WORKING_DIR.joinpath("influx_config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as _f:
   INFLUX_CONFIG = yaml.safe_load(_f) or {}
 
-BROKER_ADDRESS = "192.168.68.102"
+BROKER_ADDRESS = "172.20.10.2"
 BROKER_PORT = 1883
 TOPIC_MOTION = "sensors/motion"
 CLIENT_ID = "DisplayNode"
@@ -90,8 +90,8 @@ def draw_generative_art(screen, ticks):
     scale_freq = 0.025
 
     t = art_state["temperature"]
-    r = int(map_val(t, 15, 25, 0, 255))
-    g = int(map_val(t, 15, 25, 255, 0))
+    r = int(map_val(t, 10, 30, 0, 255))
+    g = int(map_val(t, 10, 30, 255, 0))
     color = (r, g, 0)
 
     l = art_state["humidity"]

@@ -41,6 +41,7 @@ void setup() {
   setupWiFi();
   client.setServer(SERVER_ADDRESS, MQTT_PORT);
   client.setCallback(SetupCallback);
+  client.setKeepAlive(60);
   connectMQTT();
   coap.start();
   digitalWrite(LEDPIN, LOW);
@@ -276,7 +277,7 @@ void loop() {
     }
 
     char payload[100];
-    sprintf(payload, "{\"node_id\":\"smart_art_1\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", temp, hum, (int)light_lux);
+    sprintf(payload, "{\"node_id\":\"%s\",\"temperature\":%.2f,\"humidity\":%.2f,\"light\":%d}", BOARD_NAME, temp, hum, (int)light_lux);
 
     if (DEBUG) {
       Serial.println(payload);
