@@ -49,7 +49,7 @@ The display node generates a blinking eye visualization where:
 ### Sensing Node
 - **ESP32** development board
 - **DHT22** temperature and humidity sensor
-- **PIR sensor** (HC-SR501) for motion detection
+- **PIR sensor** (HC-SR505) for motion detection
 - **TEMT6000** for ambient light sensing
 
 ## Software Requirements
